@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "603565120092",
+    "project_id": "doc-reader-92433",
+    "storage_bucket": "doc-reader-92433.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:603565120092:android:ace2fedf5a3135cbd46499",
+        "android_client_info": {
+          "package_name": "com.company.doc_reader"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDKdCvB-N_N0hzeOomrQXooPWSliDvhlGU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:603565120092:android:fe3626fd37036e2ed46499",
+        "android_client_info": {
+          "package_name": "com.example.doc_reader"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDKdCvB-N_N0hzeOomrQXooPWSliDvhlGU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
