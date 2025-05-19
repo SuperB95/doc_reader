@@ -1,0 +1,42 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="24dp">
+
+    <TextView
+        android:id="@+id/document_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Dokumentum: "
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:paddingBottom="16dp" />
+
+    <EditText
+        android:id="@+id/comment_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Írd ide a kommentet..."
+        android:minHeight="100dp"
+        android:gravity="top"
+        android:background="@android:drawable/edit_text"
+        android:padding="12dp" />
+
+    <RatingBar
+        android:id="@+id/rating_bar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:numStars="5"
+        android:stepSize="1"
+        android:layout_marginTop="24dp" />
+
+    <Button
+        android:id="@+id/save_feedback_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Mentés"
+        android:layout_marginTop="32dp"
+        android:backgroundTint="@color/purple_500"
+        android:textColor="@android:color/white" />
+</LinearLayout>

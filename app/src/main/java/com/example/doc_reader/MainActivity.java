@@ -1,6 +1,7 @@
 package com.example.doc_reader;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -8,9 +9,15 @@ import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.RatingBar;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -93,70 +100,66 @@ public class MainActivity extends AppCompatActivity {
 
     private void loadDocuments() {
         documentContainer.removeAllViews();
+
         String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
-        db.collection("documents").whereEqualTo("user_id", currentUserId).get().addOnSuccessListener(querySnapshot -> {
-            Map<String, List<String>> groupedDocs = new HashMap<>();
 
-            for (DocumentSnapshot doc : querySnapshot) {
-                String fileName = doc.getString("file_name");
-                String category = doc.getString("category");
-                if (category == null) category = "Nincs kategória";
+        db.collection("documents")
+                .whereEqualTo("user_id", currentUserId)
+                .get()
+                .addOnSuccessListener(querySnapshot -> {
+                    for (DocumentSnapshot doc : querySnapshot) {
+                        String fileName = doc.getString("file_name");
+                        String displayNameRaw = doc.getString("display_name");
+                        String displayNameFinal = (displayNameRaw != null) ? displayNameRaw : fileName;
+                        String category = doc.getString("category");
+                        if (category == null) category = "Nincs kategória";
 
-                if (!groupedDocs.containsKey(category)) {
-                    groupedDocs.put(category, new ArrayList<>());
-                }
-                groupedDocs.get(category).add(fileName);
-            }
+                        File file = new File(getFilesDir(), fileName);
 
-            // Dokumentumok megjelenítése kategóriák szerint
-            for (Map.Entry<String, List<String>> entry : groupedDocs.entrySet()) {
-                String category = entry.getKey();
+                        View docView = LayoutInflater.from(this).inflate(R.layout.document_item, documentContainer, false);
 
-                // Kategória címsor
-                TextView categoryView = new TextView(this);
-                categoryView.setText("📂 " + category);
-                categoryView.setTextSize(20);
-                categoryView.setPadding(16, 32, 16, 16);
-                categoryView.setTextColor(Color.BLACK);
-                categoryView.setTypeface(null, Typeface.BOLD);
-                documentContainer.addView(categoryView);
+                        TextView nameView = docView.findViewById(R.id.document_name);
+                        TextView categoryView = docView.findViewById(R.id.document_category);
+                        RatingBar ratingBar = docView.findViewById(R.id.document_rating_bar);
+                        Button feedbackButton = docView.findViewById(R.id.feedback_button);
+                        Button categoryButton = docView.findViewById(R.id.category_button);
+                        ImageButton deleteButton = docView.findViewById(R.id.delete_button);
+                        ImageButton renameButton = docView.findViewById(R.id.rename_button);
 
-                for (String fileName : entry.getValue()) {
-                    File file = new File(getFilesDir(), fileName);
-                    if (file.exists()) {
-                        TextView docView = new TextView(this);
-                        docView.setText("📄 " + fileName);
-                        docView.setTextSize(18);
-                        docView.setPadding(32, 16, 16, 16);
-                        docView.setTextColor(Color.DKGRAY);
-                        docView.setBackgroundResource(R.drawable.document_item_bg);
+                        nameView.setText("📄 " + displayNameFinal);
+                        categoryView.setText("Kategória: " + category);
+
+                        if (doc.contains("rating")) {
+                            Long rating = doc.getLong("rating");
+                            ratingBar.setRating(rating != null ? rating.intValue() : 0);
+                        } else {
+                            ratingBar.setRating(0);
+                        }
+
+                        // Teljes kártya kattintható a dokumentum megnyitására
                         docView.setOnClickListener(v -> openPdf(file));
-                        docView.setOnLongClickListener(v -> {
-                            showCategoryPopup(file.getName());
-                            return true;
+
+                        feedbackButton.setOnClickListener(v -> {
+                            Intent intent = new Intent(MainActivity.this, FeedbackActivity.class);
+                            intent.putExtra("file_name", fileName);
+                            startActivityForResult(intent, 100);
                         });
+
+                        categoryButton.setOnClickListener(v -> showCategoryPopup(fileName));
+
+                        deleteButton.setOnClickListener(v -> deleteDocument(fileName, file));
+
+                        renameButton.setOnClickListener(v -> showRenamePopup(fileName, displayNameFinal));
+
                         documentContainer.addView(docView);
                     }
-                }
-            }
-        });
+                });
     }
 
-    private void showCategoryPopup(String fileName) {
-        db.collection("categories").get().addOnSuccessListener(querySnapshot -> {
-            String[] categories = new String[querySnapshot.size()];
-            int i = 0;
-            for (DocumentSnapshot doc : querySnapshot) {
-                categories[i++] = doc.getString("name");
-            }
 
-            AlertDialog.Builder builder = new AlertDialog.Builder(this);
-            builder.setTitle("Válassz kategóriát")
-                    .setItems(categories, (dialog, which) -> assignCategoryToDocument(fileName, categories[which]))
-                    .setPositiveButton("Új kategória", (dialog, which) -> showNewCategoryDialog(fileName))
-                    .show();
-        });
-    }
+
+
+
 
     private void showNewCategoryDialog(String fileName) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
@@ -264,4 +267,160 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 100 && resultCode == RESULT_OK) {
+            loadDocuments();
+        }
+    }
+
+    private void showCategoryPopup(String fileName) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Kategória kiválasztása");
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(50, 40, 50, 10);
+
+        Spinner categorySpinner = new Spinner(this);
+        EditText newCategoryInput = new EditText(this);
+        newCategoryInput.setHint("Új kategória neve");
+
+        layout.addView(categorySpinner);
+        layout.addView(newCategoryInput);
+
+        builder.setView(layout);
+
+        FirebaseFirestore db = FirebaseFirestore.getInstance();
+        db.collection("categories").get().addOnSuccessListener(snapshot -> {
+            List<String> categories = new ArrayList<>();
+            for (DocumentSnapshot doc : snapshot) {
+                categories.add(doc.getString("name"));
+            }
+            ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, categories);
+            categorySpinner.setAdapter(adapter);
+        });
+
+        builder.setPositiveButton("Mentés", (dialog, which) -> {
+            String selectedCategory = (String) categorySpinner.getSelectedItem();
+            String newCategory = newCategoryInput.getText().toString().trim();
+
+            String finalCategory = !newCategory.isEmpty() ? newCategory : selectedCategory;
+
+            if (finalCategory == null || finalCategory.isEmpty()) {
+                Toast.makeText(this, "Kérlek adj meg vagy válassz kategóriát!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (!newCategory.isEmpty()) {
+                Map<String, Object> catData = new HashMap<>();
+                catData.put("name", newCategory);
+                db.collection("categories").add(catData);
+            }
+
+            updateDocumentCategory(fileName, finalCategory);
+        });
+
+        builder.setNegativeButton("Mégse", (dialog, which) -> dialog.cancel());
+        builder.show();
+    }
+
+    private void updateDocumentCategory(String fileName, String category) {
+        String userId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+
+        db.collection("documents")
+                .whereEqualTo("file_name", fileName)
+                .whereEqualTo("user_id", userId)
+                .limit(1)
+                .get()
+                .addOnSuccessListener(snapshot -> {
+                    if (!snapshot.isEmpty()) {
+                        String docId = snapshot.getDocuments().get(0).getId();
+                        db.collection("documents").document(docId)
+                                .update("category", category)
+                                .addOnSuccessListener(aVoid -> {
+                                    Toast.makeText(this, "Kategória frissítve!", Toast.LENGTH_SHORT).show();
+                                    loadDocuments(); // Frissítjük a listát
+                                })
+                                .addOnFailureListener(e ->
+                                        Toast.makeText(this, "Hiba: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                    }
+                });
+    }
+    private void showRenamePopup(String fileName, String currentName) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Dokumentum átnevezése");
+
+        final EditText input = new EditText(this);
+        input.setText(currentName);
+
+        builder.setView(input);
+
+        builder.setPositiveButton("Mentés", (dialog, which) -> {
+            String newName = input.getText().toString().trim();
+            if (!newName.isEmpty()) {
+                String userId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+
+                db.collection("documents")
+                        .whereEqualTo("file_name", fileName)
+                        .whereEqualTo("user_id", userId)
+                        .limit(1)
+                        .get()
+                        .addOnSuccessListener(snapshot -> {
+                            if (!snapshot.isEmpty()) {
+                                String docId = snapshot.getDocuments().get(0).getId();
+                                db.collection("documents").document(docId)
+                                        .update("display_name", newName)
+                                        .addOnSuccessListener(aVoid -> {
+                                            Toast.makeText(this, "Név frissítve!", Toast.LENGTH_SHORT).show();
+                                            loadDocuments();
+                                        });
+                            }
+                        });
+            }
+        });
+
+        builder.setNegativeButton("Mégse", (dialog, which) -> dialog.cancel());
+        builder.show();
+    }
+
+    private void deleteDocument(String fileName, File file) {
+        new AlertDialog.Builder(this)
+                .setTitle("Biztosan törlöd?")
+                .setMessage("Ez a művelet nem visszavonható!")
+                .setPositiveButton("Igen, törlöm", (dialog, which) -> {
+                    String userId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+
+                    db.collection("documents")
+                            .whereEqualTo("file_name", fileName)
+                            .whereEqualTo("user_id", userId)
+                            .limit(1)
+                            .get()
+                            .addOnSuccessListener(snapshot -> {
+                                if (!snapshot.isEmpty()) {
+                                    String docId = snapshot.getDocuments().get(0).getId();
+
+                                    // Firestore törlés
+                                    db.collection("documents").document(docId).delete();
+
+                                    // Lokális fájl törlés
+                                    if (file.exists()) {
+                                        if (file.delete()) {
+                                            Toast.makeText(this, "Dokumentum törölve!", Toast.LENGTH_SHORT).show();
+                                        } else {
+                                            Toast.makeText(this, "Hiba a fájl törlésekor!", Toast.LENGTH_SHORT).show();
+                                        }
+                                    }
+
+                                    loadDocuments();
+                                }
+                            });
+                })
+                .setNegativeButton("Mégse", (dialog, which) -> dialog.dismiss())
+                .show();
+    }
+
+
 }
