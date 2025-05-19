@@ -3,6 +3,8 @@ package com.example.doc_reader;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -15,18 +17,23 @@ import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.core.util.Pair;
 
+import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
@@ -34,6 +41,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int PERMISSION_REQUEST_CODE = 200;
     private ActivityResultLauncher<Intent> filePickerLauncher;
     private LinearLayout documentContainer;
+    private FirebaseFirestore db;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -42,6 +50,8 @@ public class MainActivity extends AppCompatActivity {
 
         documentContainer = findViewById(R.id.document_container);
         Button addDocumentButton = findViewById(R.id.add_document_button);
+
+        db = FirebaseFirestore.getInstance();
 
         loadDocuments();
 
@@ -61,7 +71,8 @@ public class MainActivity extends AppCompatActivity {
                                 out.write(buffer, 0, length);
                             }
 
-                            Toast.makeText(this, "PDF sikeresen importálva: " + fileName, Toast.LENGTH_SHORT).show();
+                            saveDocumentMetaToFirestore(fileName);
+                            Toast.makeText(this, "PDF sikeresen importálva!", Toast.LENGTH_SHORT).show();
                             loadDocuments();
 
                         } catch (Exception e) {
@@ -82,34 +93,121 @@ public class MainActivity extends AppCompatActivity {
 
     private void loadDocuments() {
         documentContainer.removeAllViews();
-        File[] files = getFilesDir().listFiles();
+        String currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+        db.collection("documents").whereEqualTo("user_id", currentUserId).get().addOnSuccessListener(querySnapshot -> {
+            Map<String, List<String>> groupedDocs = new HashMap<>();
 
-        if (files != null) {
-            for (File file : files) {
-                if (file.getName().endsWith(".pdf")) {
-                    TextView docView = new TextView(this);
-                    docView.setText(file.getName());
-                    docView.setTextSize(18);
-                    docView.setPadding(16, 16, 16, 16);
-                    docView.setOnClickListener(v -> openPdf(file));
-                    documentContainer.addView(docView);
+            for (DocumentSnapshot doc : querySnapshot) {
+                String fileName = doc.getString("file_name");
+                String category = doc.getString("category");
+                if (category == null) category = "Nincs kategória";
+
+                if (!groupedDocs.containsKey(category)) {
+                    groupedDocs.put(category, new ArrayList<>());
+                }
+                groupedDocs.get(category).add(fileName);
+            }
+
+            // Dokumentumok megjelenítése kategóriák szerint
+            for (Map.Entry<String, List<String>> entry : groupedDocs.entrySet()) {
+                String category = entry.getKey();
+
+                // Kategória címsor
+                TextView categoryView = new TextView(this);
+                categoryView.setText("📂 " + category);
+                categoryView.setTextSize(20);
+                categoryView.setPadding(16, 32, 16, 16);
+                categoryView.setTextColor(Color.BLACK);
+                categoryView.setTypeface(null, Typeface.BOLD);
+                documentContainer.addView(categoryView);
+
+                for (String fileName : entry.getValue()) {
+                    File file = new File(getFilesDir(), fileName);
+                    if (file.exists()) {
+                        TextView docView = new TextView(this);
+                        docView.setText("📄 " + fileName);
+                        docView.setTextSize(18);
+                        docView.setPadding(32, 16, 16, 16);
+                        docView.setTextColor(Color.DKGRAY);
+                        docView.setBackgroundResource(R.drawable.document_item_bg);
+                        docView.setOnClickListener(v -> openPdf(file));
+                        docView.setOnLongClickListener(v -> {
+                            showCategoryPopup(file.getName());
+                            return true;
+                        });
+                        documentContainer.addView(docView);
+                    }
                 }
             }
-        }
+        });
     }
 
-//    private void openPdf(File pdfFile) {
-//        Intent intent = new Intent(Intent.ACTION_VIEW);
-//        intent.setDataAndType(Uri.fromFile(pdfFile), "application/pdf");
-//        intent.setFlags(Intent.FLAG_ACTIVITY_NO_HISTORY);
-//        startActivity(intent);
-//    }
+    private void showCategoryPopup(String fileName) {
+        db.collection("categories").get().addOnSuccessListener(querySnapshot -> {
+            String[] categories = new String[querySnapshot.size()];
+            int i = 0;
+            for (DocumentSnapshot doc : querySnapshot) {
+                categories[i++] = doc.getString("name");
+            }
+
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("Válassz kategóriát")
+                    .setItems(categories, (dialog, which) -> assignCategoryToDocument(fileName, categories[which]))
+                    .setPositiveButton("Új kategória", (dialog, which) -> showNewCategoryDialog(fileName))
+                    .show();
+        });
+    }
+
+    private void showNewCategoryDialog(String fileName) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Új kategória hozzáadása");
+
+        final TextView input = new TextView(this);
+        input.setPadding(32, 32, 32, 32);
+        builder.setView(input);
+
+        builder.setPositiveButton("Mentés", (dialog, which) -> {
+            String newCategory = input.getText().toString();
+            if (!newCategory.isEmpty()) {
+                Map<String, Object> category = new HashMap<>();
+                category.put("name", newCategory);
+                category.put("created_at", System.currentTimeMillis());
+
+                db.collection("categories").add(category).addOnSuccessListener(docRef -> {
+                    Toast.makeText(this, "Kategória hozzáadva.", Toast.LENGTH_SHORT).show();
+                    assignCategoryToDocument(fileName, newCategory);
+                });
+            }
+        });
+
+        builder.setNegativeButton("Mégse", (dialog, which) -> dialog.cancel());
+        builder.show();
+    }
+
+    private void assignCategoryToDocument(String fileName, String category) {
+        db.collection("documents")
+                .whereEqualTo("file_name", fileName)
+                .get()
+                .addOnSuccessListener(querySnapshots -> {
+                    if (!querySnapshots.isEmpty()) {
+                        for (DocumentSnapshot doc : querySnapshots.getDocuments()) {
+                            doc.getReference().update("category", category);
+                        }
+                    }
+                });
+    }
+
     private void openPdf(File pdfFile) {
-        Uri contentUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", pdfFile);
+        Uri contentUri = FileProvider.getUriForFile(
+                this,
+                getPackageName() + ".fileprovider",
+                pdfFile
+        );
+
         Intent intent = new Intent(Intent.ACTION_VIEW);
         intent.setDataAndType(contentUri, "application/pdf");
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        updateDocumentLastOpened(pdfFile.getName());
+
         try {
             startActivity(intent);
         } catch (Exception e) {
@@ -140,6 +238,21 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void saveDocumentMetaToFirestore(String fileName) {
+        Map<String, Object> docMeta = new HashMap<>();
+        docMeta.put("file_name", fileName);
+        docMeta.put("import_time", System.currentTimeMillis());
+        docMeta.put("last_opened", null);
+        docMeta.put("category", null);
+        docMeta.put("user_id", FirebaseAuth.getInstance().getCurrentUser().getUid());
+        db.collection("documents")
+                .add(docMeta)
+                .addOnSuccessListener(documentReference ->
+                        Toast.makeText(this, "Metaadat mentve Firestore-ba!", Toast.LENGTH_SHORT).show())
+                .addOnFailureListener(e ->
+                        Toast.makeText(this, "Firestore mentési hiba: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -150,37 +263,5 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(this, "Engedély szükséges a fájlok kiválasztásához.", Toast.LENGTH_SHORT).show();
             }
         }
-    }
-
-
-    private void saveDocumentMetaToFirestore(String fileName) {
-        FirebaseFirestore db = FirebaseFirestore.getInstance();
-
-        Map<String, Object> docMeta = new HashMap<>();
-        docMeta.put("file_name", fileName);
-        docMeta.put("import_time", System.currentTimeMillis());
-        docMeta.put("last_opened", null);
-
-        db.collection("documents")
-                .add(docMeta)
-                .addOnSuccessListener(documentReference ->
-                        Toast.makeText(this, "Metaadat mentve Firestore-ba.", Toast.LENGTH_SHORT).show())
-                .addOnFailureListener(e ->
-                        Toast.makeText(this, "Metaadat mentési hiba: " + e.getMessage(), Toast.LENGTH_SHORT).show());
-    }
-
-
-    private void updateDocumentLastOpened(String fileName) {
-        FirebaseFirestore db = FirebaseFirestore.getInstance();
-        db.collection("documents")
-                .whereEqualTo("file_name", fileName)
-                .get()
-                .addOnSuccessListener(queryDocumentSnapshots -> {
-                    if (!queryDocumentSnapshots.isEmpty()) {
-                        for (DocumentSnapshot doc : queryDocumentSnapshots.getDocuments()) {
-                            doc.getReference().update("last_opened", System.currentTimeMillis());
-                        }
-                    }
-                });
     }
 }

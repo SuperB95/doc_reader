@@ -9,7 +9,10 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="➕ PDF Feltöltése"
-        android:layout_marginBottom="16dp" />
+        android:layout_marginBottom="16dp"
+        android:backgroundTint="@color/purple_500"
+        android:textColor="@android:color/white"
+        android:elevation="4dp" />
 
     <ScrollView
         android:layout_width="match_parent"
@@ -21,7 +24,6 @@
             android:orientation="vertical"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"/>
-
     </ScrollView>
 
 </LinearLayout>
